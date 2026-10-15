@@ -45,7 +45,7 @@ input,select,textarea{font:inherit;color:inherit}
 #app{display:flex;height:100vh;height:100dvh}
 
 /* ---------- 사이드바 ---------- */
-#side{width:var(--sideW);flex-shrink:0;background:var(--side);border-right:1px solid var(--border);
+#side{width:var(--sideW);flex-shrink:0;position:relative;background:var(--side);border-right:1px solid var(--border);
   display:flex;flex-direction:column;transition:margin-left .2s ease,transform .22s ease;user-select:none;-webkit-user-select:none;
   padding-top:env(safe-area-inset-top)}
 body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
@@ -77,6 +77,10 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
 .row.drop-in{box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg)}
 .row.drop-before::before,.row.drop-after::after{content:"";position:absolute;left:8px;right:4px;height:3px;background:var(--accent);border-radius:2px}
 .row.drop-before::before{top:-2px}.row.drop-after::after{bottom:-2px}
+#sideResize{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:5}
+#sideResize:hover,#sideResize.on{background:linear-gradient(to right,transparent 3px,var(--accent) 3px,var(--accent) 5px,transparent 5px)}
+body.resizing{cursor:col-resize;user-select:none}
+body.resizing #side{transition:none}
 .side-foot{border-top:1px solid var(--border);padding:6px 0 calc(8px + env(safe-area-inset-bottom))}
 #scrim{display:none}
 
@@ -230,6 +234,7 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
 /* ---------- 모바일 ---------- */
 @media (max-width: 820px){
   #side{position:fixed;left:0;top:0;bottom:0;z-index:100;width:min(300px,86vw);transform:translateX(-102%);margin:0!important}
+  #sideResize{display:none}
   body.side-open #side{transform:none;box-shadow:var(--shadow)}
   body.side-open #scrim{display:block;position:fixed;inset:0;z-index:90;background:rgba(15,15,15,.35)}
   #page{padding:22px 20px 0}
@@ -241,6 +246,18 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
   #status .txt{display:none}
   .row{height:36px}
   .sbtn{padding:8px 10px}
+}
+@media (max-width: 560px){
+  .lbl{display:none}
+  #toolbar{padding:3px 4px}
+  #toolbar button{min-width:30px;padding:0 5px}
+  #toolbar .sep{margin:0 2px}
+  #topbar{padding:0 4px;height:42px}
+  #page{padding:14px 14px 0}
+  #title{font-size:1.6em}
+  #picon{font-size:38px}
+  .page-top{height:24px}
+  #meta{margin:4px 0 12px}
 }
 @media print{
   #side,#topbar,#toolbar,#kids,#below,.page-top,#banner,#scrim{display:none!important}
@@ -264,6 +281,7 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
       <div id="tree"></div>
       <button class="sbtn" id="btnNew2" style="margin-top:4px"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 4v12M4 10h12"/></svg>페이지 추가</button>
     </div>
+    <div id="sideResize" title="끌어서 폭 조절 · 두 번 클릭하면 원래대로"></div>
     <div class="side-foot">
       <button class="sbtn" id="btnInstall" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg>앱으로 설치하기</button>
       <button class="sbtn" id="btnTrash"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10"/></svg>휴지통</button>
@@ -280,7 +298,7 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
       <button class="ibtn" id="btnMore" title="더보기"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
     </header>
     <div id="toolbar">
-      <button data-cmd="block" class="plus" title="블록 추가 ( / )">＋ 블록</button>
+      <button data-cmd="block" class="plus" title="블록 추가 ( / )">＋<span class="lbl"> 블록</span></button>
       <span class="sep"></span>
       <button data-cmd="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
       <button data-cmd="italic" title="기울임 (Ctrl+I)"><i style="font-family:Georgia,serif">I</i></button>
@@ -294,9 +312,9 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
       <button data-cmd="h2" title="제목 2">H2</button>
       <button data-cmd="h3" title="제목 3">H3</button>
       <span class="sep"></span>
-      <button data-cmd="ul" title="글머리 목록">•&nbsp;목록</button>
-      <button data-cmd="ol" title="번호 목록">1.&nbsp;목록</button>
-      <button data-cmd="todo" title="할 일">☑ 할 일</button>
+      <button data-cmd="ul" title="글머리 목록">•<span class="lbl">&nbsp;목록</span></button>
+      <button data-cmd="ol" title="번호 목록">1.<span class="lbl">&nbsp;목록</span></button>
+      <button data-cmd="todo" title="할 일">☑<span class="lbl"> 할 일</span></button>
       <button data-cmd="quote" title="인용">❝</button>
       <button data-cmd="img" title="이미지">🖼</button>
       <span class="sep"></span>
@@ -1457,12 +1475,25 @@ function toggleSide() {
 $('#sideOpen').onclick = toggleSide;
 $('#sideClose').onclick = toggleSide;
 $('#scrim').onclick = () => document.body.classList.remove('side-open');
+// 사이드바 폭 조절 (끌기 · 두 번 클릭하면 기본값)
+function applySideW() { document.documentElement.style.setProperty('--sideW', (cfg.sideW || 260) + 'px'); }
+const rz = $('#sideResize');
+rz.addEventListener('pointerdown', e => {
+  e.preventDefault(); rz.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing'); rz.classList.add('on');
+  const move = ev => { cfg.sideW = Math.round(Math.max(170, Math.min(480, ev.clientX))); applySideW(); };
+  const up = () => { rz.removeEventListener('pointermove', move); rz.removeEventListener('pointerup', up); document.body.classList.remove('resizing'); rz.classList.remove('on'); saveCfg(); };
+  rz.addEventListener('pointermove', move); rz.addEventListener('pointerup', up);
+});
+rz.addEventListener('dblclick', () => { cfg.sideW = 260; applySideW(); saveCfg(); });
 document.addEventListener('keydown', e => {
+  // 한글 입력 상태에서는 e.key 가 'ㅏ' 같은 글자가 되므로 자판 위치(e.code)로 확인
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && (e.key === 'k' || e.key === 'K' || e.key === 'p' || e.key === 'P')) { e.preventDefault(); openSearch(); }
-  else if (e.altKey && (e.key === 'n' || e.key === 'N' || e.code === 'KeyN')) { e.preventDefault(); createPage(''); }
-  else if (mod && e.key === '\\') { e.preventDefault(); toggleSide(); }
-  else if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); flushEditor(); flushPersist(); sync(); }
+  const k = e.code;
+  if (mod && !e.altKey && (k === 'KeyK' || k === 'KeyP')) { e.preventDefault(); openSearch(); }
+  else if (e.altKey && !mod && k === 'KeyN') { e.preventDefault(); createPage(''); }
+  else if (mod && (k === 'Backslash' || k === 'IntlYen')) { e.preventDefault(); toggleSide(); }
+  else if (mod && !e.altKey && k === 'KeyS') { e.preventDefault(); flushEditor(); flushPersist(); sync(); toast('저장했어요'); }
   else if (e.key === 'Escape') { if (pop) closePop(); else if (S.modal) closeModal(); else document.body.classList.remove('side-open'); }
 });
 window.addEventListener('popstate', e => { const id = (e.state && e.state.id) || location.hash.slice(1); if (id && get(id)) openPage(id, { noPush: true }); });
@@ -1501,7 +1532,7 @@ function afterFirstSync(force) {
   if (S.status === 'ok' || !syncOn() || force) { const n = newNote('', { title: '시작하기', icon: '👋', content: WELCOME }); openPage(n.id, { noPush: true }); }
 }
 async function init() {
-  applyTheme();
+  applyTheme(); applySideW();
   document.body.classList.toggle('side-closed', !!cfg.sideClosed);
   try { await DB.open(); (await DB.all()).forEach(n => S.notes.set(n.id, n)); S.rev = Number(await DB.get('rev')) || 0; const ru = await DB.get('revUrl'); if (ru && ru !== cfg.url) S.rev = 0; }
   catch (e) { toast('이 브라우저에서는 기기 저장이 안 돼요 (시크릿 모드?)'); }
