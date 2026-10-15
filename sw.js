@@ -1,5 +1,5 @@
 // 내 메모장 — 오프라인에서도 열리도록 앱 파일을 저장해 둡니다.
-const CACHE = 'memo-v4';
+const CACHE = 'memo-v5';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
 self.addEventListener('install', e => {

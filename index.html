@@ -626,7 +626,7 @@ function renderPage(keepScroll) {
   editor.innerHTML = n.content || '<p><br></p>';
   S.edDirty = false; $('#banner').hidden = true;
   normalize(); refreshPageLinks(); renderMeta(); renderKids(); renderCrumbs();
-  document.title = (n.title || '제목 없음') + ' — 내 메모장';
+  document.title = (n.title || '제목 없음');
   scroller.scrollTop = keepScroll ? st : 0;
 }
 function renderMeta() {
@@ -671,7 +671,7 @@ titleEl.addEventListener('input', () => {
   if (!S.cur) return;
   S.cur.title = titleEl.textContent.replace(/\n/g, ' ');
   touch(S.cur); renderSideSoon(); renderCrumbs(); renderMeta();
-  document.title = (S.cur.title || '제목 없음') + ' — 내 메모장';
+  document.title = (S.cur.title || '제목 없음');
 });
 titleEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); editor.focus(); placeCaret(editor.firstElementChild || editor, false); }
