@@ -247,6 +247,13 @@ body.resizing #side{transition:none}
   .row{height:36px}
   .sbtn{padding:8px 10px}
 }
+#btnPin{filter:grayscale(1);opacity:.45}
+#btnPin.on{filter:none;opacity:1;background:var(--accent-bg)}
+@media (max-width: 320px){
+  #btnStar{display:none}
+  #crumbs .crumb{padding:3px 2px}
+  #page{padding:10px 10px 0}
+}
 @media (max-width: 560px){
   .lbl{display:none}
   #toolbar{padding:3px 4px}
@@ -294,6 +301,7 @@ body.resizing #side{transition:none}
       <button class="ibtn" id="sideOpen" title="페이지 목록"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
       <nav id="crumbs"></nav>
       <button id="status" data-s="local" title="동기화 상태"><span class="dot"></span><span class="txt">이 기기에만 저장</span></button>
+      <button class="ibtn" id="btnPin" title="항상 위에 표시 (Ctrl+Alt+T)" hidden>📌</button>
       <button class="ibtn" id="btnStar" title="즐겨찾기">☆</button>
       <button class="ibtn" id="btnMore" title="더보기"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
     </header>
@@ -1468,6 +1476,20 @@ $('#btnTrash').onclick = openTrash;
 $('#btnSettings').onclick = openSettings;
 $('#status').onclick = openSettings;
 $('#btnInstall').onclick = installApp;
+// Windows 전용 프로그램(내 메모장.exe) 안에서 열렸을 때: 📌 항상 위에 버튼
+const host = window.chrome && window.chrome.webview;
+if (host) {
+  $('#btnPin').hidden = false;
+  $('#btnPin').onclick = () => host.postMessage('pin');
+  host.addEventListener('message', e => {
+    if (typeof e.data === 'string' && e.data.startsWith('pin:')) {
+      const on = e.data === 'pin:1';
+      $('#btnPin').classList.toggle('on', on);
+      $('#btnPin').title = on ? '항상 위에 표시 중 — 누르면 해제 (Ctrl+Alt+T)' : '항상 위에 표시 (Ctrl+Alt+T)';
+    }
+  });
+  host.postMessage('ready');
+}
 function toggleSide() {
   if (isMobile()) document.body.classList.toggle('side-open');
   else { cfg.sideClosed = !cfg.sideClosed; saveCfg(); document.body.classList.toggle('side-closed', cfg.sideClosed); }
