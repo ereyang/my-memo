@@ -1,0 +1,20 @@
+{
+  "name": "내 메모장",
+  "short_name": "메모장",
+  "description": "PC와 휴대폰에서 함께 쓰는 나만의 메모장",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "background_color": "#f7f7f5",
+  "theme_color": "#f7f7f5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "새 페이지", "url": "./?new=1", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
