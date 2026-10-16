@@ -20,6 +20,8 @@ static class Program
     [STAThread]
     static void Main()
     {
+        // 화면 배율(125%·150%)에서 Windows 가 흐리게 늘이지 않도록 고해상도 지원을 알림
+        try { Native.SetProcessDpiAwarenessContext((IntPtr)(-4)); } catch { }
         bool first;
         using (var mutex = new Mutex(true, "MyMemoDesktop_SingleInstance", out first))
         {
@@ -161,7 +163,7 @@ class MemoForm : Form
         isMain = main;
         this.pageId = pageId;
         Text = "내 메모장";
-        MinimumSize = new Size(200, 160);
+        MinimumSize = new Size(Dpi.Scale(200), Dpi.Scale(160));
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.White;
         try
@@ -172,7 +174,7 @@ class MemoForm : Form
         catch { }
         LoadCfg();
         if (isMain) { RestoreBoundsFromCfg(); TopMost = Get("top") == "1"; }
-        else Size = new Size(420, 640);
+        else Size = new Size(Dpi.Scale(420), Dpi.Scale(640));
 
         web = new WebView2();
         web.Dock = DockStyle.Fill;
@@ -210,7 +212,13 @@ class MemoForm : Form
         // 브라우저 단축키(Ctrl + - / = 확대·축소 등)는 끄고 메모장이 직접 처리:
         // 글자를 골라 두었으면 고른 글자 크기만, 아니면 메모장이 "zoom:" 메시지를 보내 창 전체 확대·축소
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        core.DocumentTitleChanged += delegate { string t = core.DocumentTitle; Text = string.IsNullOrEmpty(t) ? "내 메모장" : t; };
+        core.DocumentTitleChanged += delegate
+        {
+            // 제목이 아직 없으면 WebView2 가 주소(ereyang.github.io/…)를 대신 넘겨주므로 그때는 앱 이름으로
+            string t = core.DocumentTitle ?? "";
+            bool isUrl = t.StartsWith("http", StringComparison.OrdinalIgnoreCase) || t.Contains("github.io/");
+            Text = (t.Length == 0 || isUrl) ? "내 메모장" : t;
+        };
         core.NewWindowRequested += (s, a) => { a.Handled = true; OpenExternal(a.Uri); };
         core.NavigationStarting += (s, a) =>
         {
@@ -269,11 +277,17 @@ class MemoForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == 0x02E0) // WM_DPICHANGED
+        {
+            var rc = (Native.RECT)Marshal.PtrToStructure(m.LParam, typeof(Native.RECT));
+            Bounds = new Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
+            return;
+        }
         if (m.Msg == 0x0112) // WM_SYSCOMMAND
         {
             int id = (int)m.WParam & 0xFFF0;
             if ((int)m.WParam == SC_PIN) { SetPin(!TopMost); return; }
-            if ((int)m.WParam == SC_RESET) { WindowState = FormWindowState.Normal; Size = new Size(420, 640); return; }
+            if ((int)m.WParam == SC_RESET) { WindowState = FormWindowState.Normal; Size = new Size(Dpi.Scale(420), Dpi.Scale(640)); return; }
             if ((int)m.WParam == SC_NEWWIN) { MemoApp.Current.Open(null, false); return; }
         }
         if (m.Msg == Program.ShowMsg && Program.ShowMsg != 0) { MemoApp.Current.ShowMain(); return; }
@@ -284,6 +298,7 @@ class MemoForm : Form
     {
         if (isMain)
         {
+            Set("dpi", "1");
             Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             Set("x", b.X.ToString()); Set("y", b.Y.ToString()); Set("w", b.Width.ToString()); Set("h", b.Height.ToString());
             Set("max", WindowState == FormWindowState.Maximized ? "1" : "0");
@@ -296,12 +311,13 @@ class MemoForm : Form
     void RestoreBoundsFromCfg()
     {
         int x, y, w, h;
-        Rectangle r = new Rectangle(0, 0, 420, 640);
+        Rectangle r = new Rectangle(0, 0, Dpi.Scale(420), Dpi.Scale(640));
         Rectangle wa = Screen.PrimaryScreen.WorkingArea;
-        r.X = wa.Right - r.Width - 40; r.Y = wa.Top + 60;
+        r.X = wa.Right - r.Width - Dpi.Scale(40); r.Y = wa.Top + Dpi.Scale(60);
         if (int.TryParse(Get("x"), out x) && int.TryParse(Get("y"), out y) && int.TryParse(Get("w"), out w) && int.TryParse(Get("h"), out h))
         {
-            var saved = new Rectangle(x, y, Math.Max(200, w), Math.Max(160, h));
+            if (Get("dpi") != "1") { x = Dpi.Scale(x); y = Dpi.Scale(y); w = Dpi.Scale(w); h = Dpi.Scale(h); }
+            var saved = new Rectangle(x, y, Math.Max(Dpi.Scale(200), w), Math.Max(Dpi.Scale(160), h));
             foreach (var s in Screen.AllScreens)
                 if (s.WorkingArea.IntersectsWith(new Rectangle(saved.X + 40, saved.Y + 10, 40, 20))) { r = saved; break; }
         }
@@ -338,8 +354,16 @@ class MemoForm : Form
     }
 }
 
+static class Dpi
+{
+    public static int Scale(int v) { int d = 96; try { d = Native.GetDpiForSystem(); } catch { } return v * d / 96; }
+}
+
 static class Native
 {
+    [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] public static extern int GetDpiForSystem();
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hWnd, int id, int mods, int vk);
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int RegisterWindowMessage(string name);
