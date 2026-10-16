@@ -929,6 +929,17 @@ function applyInline(prop, val) {
   if (kept.length) { const r = document.createRange(); r.setStartBefore(kept[0]); r.setEndAfter(kept[kept.length - 1]); s.removeAllRanges(); s.addRange(r); }
   markChanged(); updateToolbarState();
 }
+function stepSize(dir) {
+  const s = getSelection(); const r = s.getRangeAt(0);
+  let x = r.startContainer; if (x.nodeType === 1 && x.childNodes[r.startOffset]) x = x.childNodes[r.startOffset];
+  if (x.nodeType === 3 && r.startOffset >= x.data.length && x.nextSibling) x = x.nextSibling;
+  const el = x.nodeType === 1 ? x : x.parentElement;
+  const cur = parseFloat(getComputedStyle(el).fontSize) * 16 / (cfg.fs || 16);
+  let next = dir > 0 ? SIZES.find(p => p > cur + 0.5) : [...SIZES].reverse().find(p => p < cur - 0.5);
+  if (!next) { toast(dir > 0 ? '가장 큰 크기예요' : '가장 작은 크기예요'); return; }
+  applyInline('fontSize', sizeCSS(next));
+  $('#tbSize').textContent = next + ' ▾';
+}
 function fontPicker(anchor) {
   const el = document.createElement('div');
   el.addEventListener('mousedown', e => e.preventDefault());
@@ -1575,6 +1586,13 @@ document.addEventListener('keydown', e => {
   // 한글 입력 상태에서는 e.key 가 'ㅏ' 같은 글자가 되므로 자판 위치(e.code)로 확인
   const mod = e.ctrlKey || e.metaKey;
   const k = e.code;
+  // 글자를 골라 둔 채 Ctrl + - / Ctrl + = (또는 Ctrl + [ / ]) → 고른 글자만 작게 / 크게
+  if (mod && !e.altKey && S.cur) {
+    const sel = getSelection();
+    const down = ['Minus', 'NumpadSubtract', 'BracketLeft'].includes(k) || (e.shiftKey && k === 'Comma');
+    const up = ['Equal', 'NumpadAdd', 'BracketRight'].includes(k) || (e.shiftKey && k === 'Period');
+    if ((down || up) && sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode)) { e.preventDefault(); stepSize(up ? 1 : -1); return; }
+  }
   if (mod && !e.altKey && (k === 'KeyK' || k === 'KeyP')) { e.preventDefault(); openSearch(); }
   else if (e.altKey && !mod && k === 'KeyN') { e.preventDefault(); createPage(''); }
   else if (mod && (k === 'Backslash' || k === 'IntlYen')) { e.preventDefault(); toggleSide(); }
