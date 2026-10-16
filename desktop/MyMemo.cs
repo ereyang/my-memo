@@ -31,23 +31,121 @@ static class Program
             }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MemoForm());
+            Application.Run(new MemoApp());
         }
+    }
+}
+
+// 창 여러 개 관리: 단축키는 숨은 창이 받고, 마지막 창이 닫히면 프로그램 종료
+class MemoApp : ApplicationContext
+{
+    public static MemoApp Current;
+    public readonly List<MemoForm> Forms = new List<MemoForm>();
+    public System.Threading.Tasks.Task<CoreWebView2Environment> Env;
+    readonly HotkeyWindow keys;
+
+    public MemoApp()
+    {
+        Current = this;
+        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyMemo");
+        Env = CoreWebView2Environment.CreateAsync(null, Path.Combine(dir, "WebView2"));
+        keys = new HotkeyWindow(this);
+        Open(null, true);
+    }
+
+    public MemoForm Main { get { return Forms.Count > 0 ? Forms[0] : null; } }
+
+    public MemoForm Open(string pageId, bool main)
+    {
+        var f = new MemoForm(main, pageId);
+        Forms.Add(f);
+        f.FormClosed += delegate { Forms.Remove(f); if (Forms.Count == 0) { keys.Dispose(); ExitThread(); } };
+        if (!main && Forms.Count > 1)
+        {
+            // 지금 앞에 있는 창 옆에 살짝 비켜서
+            MemoForm from = Active() ?? Forms[0];
+            Rectangle b = from.WindowState == FormWindowState.Normal ? from.Bounds : from.RestoreBounds;
+            Rectangle wa = Screen.FromRectangle(b).WorkingArea;
+            int x = b.X - b.Width - 8; if (x < wa.Left) x = Math.Min(b.X + 36, wa.Right - b.Width);
+            f.Bounds = new Rectangle(x, Math.Min(b.Y + 24, wa.Bottom - b.Height), b.Width, b.Height);
+            f.TopMost = from.TopMost;
+        }
+        f.Show();
+        return f;
+    }
+
+    public MemoForm Active()
+    {
+        IntPtr fg = Native.GetForegroundWindow();
+        foreach (var f in Forms) if (f.Handle == fg) return f;
+        return null;
+    }
+
+    // Ctrl+Alt+M : 모든 창 보이기 / 숨기기
+    public void ToggleAll()
+    {
+        bool anyFront = Active() != null;
+        foreach (var f in Forms)
+        {
+            if (anyFront) f.WindowState = FormWindowState.Minimized;
+            else f.BringUp();
+        }
+    }
+
+    public void PinActive()
+    {
+        MemoForm f = Active() ?? Main;
+        if (f != null) f.SetPin(!f.TopMost);
+    }
+
+    public void ShowMain() { foreach (var f in Forms) f.BringUp(); }
+}
+
+class HotkeyWindow : NativeWindow, IDisposable
+{
+    const int HK_SHOW = 1, HK_PIN = 2;
+    readonly MemoApp app;
+    public HotkeyWindow(MemoApp app)
+    {
+        this.app = app;
+        CreateHandle(new CreateParams { Caption = "MyMemoHotkeys" });
+        Native.RegisterHotKey(Handle, HK_SHOW, 0x0002 | 0x0001 | 0x4000, (int)Keys.M);   // Ctrl+Alt+M
+        Native.RegisterHotKey(Handle, HK_PIN, 0x0002 | 0x0001 | 0x4000, (int)Keys.T);    // Ctrl+Alt+T
+    }
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x0312)
+        {
+            if ((int)m.WParam == HK_SHOW) app.ToggleAll();
+            else if ((int)m.WParam == HK_PIN) app.PinActive();
+            return;
+        }
+        if (m.Msg == Program.ShowMsg && Program.ShowMsg != 0) { app.ShowMain(); return; }
+        base.WndProc(ref m);
+    }
+    public void Dispose()
+    {
+        if (Handle == IntPtr.Zero) return;
+        Native.UnregisterHotKey(Handle, HK_SHOW); Native.UnregisterHotKey(Handle, HK_PIN);
+        DestroyHandle();
     }
 }
 
 class MemoForm : Form
 {
-    const int HOTKEY_ID = 1;
     const int SC_PIN = 0x1F0;   // 시스템 메뉴: 항상 위에
     const int SC_RESET = 0x1F1; // 시스템 메뉴: 크기 기본값
+    const int SC_NEWWIN = 0x1F2; // 시스템 메뉴: 새 창
     readonly string dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyMemo");
     readonly Dictionary<string, string> cfg = new Dictionary<string, string>();
     WebView2 web;
-    bool hotkeyOk;
+    readonly bool isMain;
+    readonly string pageId;
 
-    public MemoForm()
+    public MemoForm(bool main, string pageId)
     {
+        isMain = main;
+        this.pageId = pageId;
         Text = "내 메모장";
         MinimumSize = new Size(200, 160);
         StartPosition = FormStartPosition.Manual;
@@ -59,8 +157,8 @@ class MemoForm : Form
         }
         catch { }
         LoadCfg();
-        RestoreBoundsFromCfg();
-        TopMost = Get("top") == "1";
+        if (isMain) { RestoreBoundsFromCfg(); TopMost = Get("top") == "1"; }
+        else Size = new Size(420, 640);
 
         web = new WebView2();
         web.Dock = DockStyle.Fill;
@@ -75,14 +173,13 @@ class MemoForm : Form
         Native.AppendMenu(sm, 0x800, IntPtr.Zero, null);
         Native.AppendMenu(sm, 0, (IntPtr)SC_PIN, "항상 위에 표시\tCtrl+Alt+T");
         Native.AppendMenu(sm, 0, (IntPtr)SC_RESET, "창 크기 기본값으로");
+        Native.AppendMenu(sm, 0, (IntPtr)SC_NEWWIN, "새 창 열기	Ctrl+Shift+N");
         UpdatePinMenu();
 
-        hotkeyOk = Native.RegisterHotKey(Handle, HOTKEY_ID, 0x0002 | 0x0001 | 0x4000, (int)Keys.M);   // Ctrl+Alt+M
-        Native.RegisterHotKey(Handle, HOTKEY_ID + 1, 0x0002 | 0x0001 | 0x4000, (int)Keys.T);          // Ctrl+Alt+T
 
         try
         {
-            var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataDir, "WebView2"));
+            var env = await MemoApp.Current.Env;
             await web.EnsureCoreWebView2Async(env);
         }
         catch (Exception ex)
@@ -113,10 +210,12 @@ class MemoForm : Form
             else if (m == "zoom:+") web.ZoomFactor = Math.Min(5, Math.Round(web.ZoomFactor * 1.1, 2));
             else if (m == "zoom:-") web.ZoomFactor = Math.Max(0.25, Math.Round(web.ZoomFactor / 1.1, 2));
             else if (m == "zoom:0") web.ZoomFactor = 1;
+            else if (m.StartsWith("newwin:")) MemoApp.Current.Open(m.Substring(7), false);
         };
         double z;
         if (double.TryParse(Get("zoom"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out z) && z >= 0.25 && z <= 5) web.ZoomFactor = z;
-        core.Navigate(Program.AppUrl);
+        string id = pageId ?? "";
+        core.Navigate(Program.AppUrl + (id.Length > 0 && System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-z0-9]+$") ? "#" + id : ""));
     }
 
     void OpenExternal(string uri)
@@ -126,10 +225,10 @@ class MemoForm : Form
         try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
     }
 
-    void SetPin(bool on)
+    public void SetPin(bool on)
     {
         TopMost = on;
-        Set("top", on ? "1" : "0");
+        if (isMain) Set("top", on ? "1" : "0");
         UpdatePinMenu();
         SendPin();
     }
@@ -144,17 +243,7 @@ class MemoForm : Form
         Native.CheckMenuItem(Native.GetSystemMenu(Handle, false), SC_PIN, TopMost ? 0x8 : 0x0);
     }
 
-    void ToggleShow()
-    {
-        if (Visible && WindowState != FormWindowState.Minimized && Native.GetForegroundWindow() == Handle)
-        {
-            WindowState = FormWindowState.Minimized;
-            return;
-        }
-        BringUp();
-    }
-
-    void BringUp()
+    public void BringUp()
     {
         if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
@@ -165,31 +254,27 @@ class MemoForm : Form
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == 0x0312) // WM_HOTKEY
-        {
-            if ((int)m.WParam == HOTKEY_ID) ToggleShow();
-            else if ((int)m.WParam == HOTKEY_ID + 1) SetPin(!TopMost);
-            return;
-        }
         if (m.Msg == 0x0112) // WM_SYSCOMMAND
         {
             int id = (int)m.WParam & 0xFFF0;
             if ((int)m.WParam == SC_PIN) { SetPin(!TopMost); return; }
             if ((int)m.WParam == SC_RESET) { WindowState = FormWindowState.Normal; Size = new Size(420, 640); return; }
+            if ((int)m.WParam == SC_NEWWIN) { MemoApp.Current.Open(null, false); return; }
         }
-        if (m.Msg == Program.ShowMsg && Program.ShowMsg != 0) { BringUp(); return; }
+        if (m.Msg == Program.ShowMsg && Program.ShowMsg != 0) { MemoApp.Current.ShowMain(); return; }
         base.WndProc(ref m);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-        Set("x", b.X.ToString()); Set("y", b.Y.ToString()); Set("w", b.Width.ToString()); Set("h", b.Height.ToString());
-        Set("max", WindowState == FormWindowState.Maximized ? "1" : "0");
-        try { if (web != null && web.CoreWebView2 != null) Set("zoom", web.ZoomFactor.ToString(System.Globalization.CultureInfo.InvariantCulture)); } catch { }
-        SaveCfg();
-        if (hotkeyOk) Native.UnregisterHotKey(Handle, HOTKEY_ID);
-        Native.UnregisterHotKey(Handle, HOTKEY_ID + 1);
+        if (isMain)
+        {
+            Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            Set("x", b.X.ToString()); Set("y", b.Y.ToString()); Set("w", b.Width.ToString()); Set("h", b.Height.ToString());
+            Set("max", WindowState == FormWindowState.Maximized ? "1" : "0");
+            try { if (web != null && web.CoreWebView2 != null) Set("zoom", web.ZoomFactor.ToString(System.Globalization.CultureInfo.InvariantCulture)); } catch { }
+            SaveCfg();
+        }
         base.OnFormClosing(e);
     }
 

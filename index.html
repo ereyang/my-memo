@@ -304,6 +304,7 @@ body.resizing #side{transition:none}
       <button class="ibtn" id="sideOpen" title="페이지 목록"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
       <nav id="crumbs"></nav>
       <button id="status" data-s="local" title="동기화 상태"><span class="dot"></span><span class="txt">이 기기에만 저장</span></button>
+      <button class="ibtn" id="btnNewWin" title="이 페이지를 새 창으로 (Ctrl+Shift+N)" hidden>🗗</button>
       <button class="ibtn" id="btnPin" title="항상 위에 표시 (Ctrl+Alt+T)" hidden>📌</button>
       <button class="ibtn" id="btnStar" title="즐겨찾기">☆</button>
       <button class="ibtn" id="btnMore" title="더보기"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
@@ -638,7 +639,7 @@ function renderPage(keepScroll) {
   if (titleEl.textContent !== n.title) titleEl.textContent = n.title || '';
   editor.innerHTML = n.content || '<p><br></p>';
   S.edDirty = false; $('#banner').hidden = true;
-  normalize(); refreshPageLinks(); renderMeta(); renderKids(); renderCrumbs();
+  fixNewlines(editor); normalize(); refreshPageLinks(); renderMeta(); renderKids(); renderCrumbs();
   document.title = (n.title || '제목 없음');
   scroller.scrollTop = keepScroll ? st : 0;
 }
@@ -1067,7 +1068,34 @@ const MD = [
   [/^[-*+•]$/, () => listCmd('ul')], [/^1[.)]$/, () => listCmd('ol')], [/^\[ ?\]$/, () => listCmd('todo')],
   [/^>$/, () => fmtBlock('BLOCKQUOTE')], [/^```$/, () => fmtBlock('PRE')], [/^!$/, () => fmtBlock('BLOCKQUOTE', 'callout')],
 ];
+// 일부 휴대폰 자판은 Enter 를 "\n" 글자로 넣어서, 화면에서는 띄어쓰기처럼 보여 줄바꿈이 사라짐 → 문단 나누기로 바꿈
+editor.addEventListener('beforeinput', e => {
+  if (!['insertText', 'insertReplacementText'].includes(e.inputType) || !e.data || !/[\r\n]/.test(e.data) || closestIn('pre')) return;
+  e.preventDefault();
+  e.data.replace(/\r\n?/g, '\n').split('\n').forEach((t, i) => { if (i) exec('insertParagraph'); if (t) exec('insertText', t); });
+});
+// 글 속에 남아 있는 "\n" 은 <br> 로 (목록·표 사이의 빈 줄 같은 HTML 들여쓰기는 건드리지 않음)
+function fixNewlines(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (!n.data.includes('\n')) continue;
+    const p = n.parentElement;
+    if (!p || p === root || p.closest('pre') || /^(UL|OL|TABLE|TBODY|THEAD|TR|DETAILS)$/.test(p.tagName)) continue;
+    if (!n.data.trim()) continue;
+    hits.push(n);
+  }
+  for (const n of hits) {
+    const parts = n.data.replace(/\r\n?/g, '\n').split('\n');
+    const frag = document.createDocumentFragment();
+    parts.forEach((t, i) => { if (i) frag.append(document.createElement('br')); if (t) frag.append(t); });
+    if (parts[parts.length - 1] === '' && !n.nextSibling) frag.append(document.createElement('br'));
+    n.replaceWith(frag);
+  }
+  return hits.length;
+}
 editor.addEventListener('input', e => {
+  if (!e.isComposing && fixNewlines(editor)) markChanged();
   // 맨 위에 떠 있는 글자는 문단으로 감싸기
   if ([...editor.childNodes].some(n => n.nodeType === 3 && n.data.trim())) exec('formatBlock', '<p>');
   if (!editor.firstElementChild) editor.innerHTML = '<p><br></p>';
@@ -1340,6 +1368,7 @@ function pageMenu(n, rect) {
     { icon: '＋', label: '하위 페이지 추가', run: () => createPage(n.id) },
     { icon: '↪', label: '다른 곳으로 옮기기', run: () => moveDialog(n) },
     { icon: '⧉', label: '복제', run: () => duplicate(n) },
+    ...(window.chrome && window.chrome.webview ? [{ icon: '🗗', label: '새 창으로 열기', run: () => openInNewWindow(n) }] : []),
     ...(S.cur && S.cur.id === n.id ? [{ icon: '🖨', label: '인쇄 · PDF로 저장', run: () => { flushEditor(); setTimeout(() => print(), 50); } }] : []),
     '-',
     { icon: '🗑', label: '휴지통으로 옮기기', danger: true, run: () => trashPage(n) },
@@ -1554,6 +1583,8 @@ $('#btnInstall').onclick = installApp;
 const host = window.chrome && window.chrome.webview;
 if (host) {
   $('#btnPin').hidden = false;
+  $('#btnNewWin').hidden = false;
+  $('#btnNewWin').onclick = () => openInNewWindow(S.cur);
   $('#btnPin').onclick = () => host.postMessage('pin');
   host.addEventListener('message', e => {
     if (typeof e.data === 'string' && e.data.startsWith('pin:')) {
@@ -1563,6 +1594,12 @@ if (host) {
     }
   });
   host.postMessage('ready');
+}
+// 전용 프로그램: 페이지를 새 창으로 (창 여러 개를 동시에 띄우기)
+function openInNewWindow(n) {
+  if (!host) return;
+  flushEditor(); flushPersist();
+  host.postMessage('newwin:' + (n ? n.id : ''));
 }
 function toggleSide() {
   if (isMobile()) document.body.classList.toggle('side-open');
@@ -1599,6 +1636,7 @@ document.addEventListener('keydown', e => {
     const z = ['Minus', 'NumpadSubtract'].includes(k) ? '-' : ['Equal', 'NumpadAdd'].includes(k) ? '+' : (k === 'Digit0' || k === 'Numpad0') ? '0' : '';
     if (z) { e.preventDefault(); host.postMessage('zoom:' + z); return; }
   }
+  if (host && mod && e.shiftKey && !e.altKey && k === 'KeyN') { e.preventDefault(); openInNewWindow(S.cur); return; }
   if (host && k === 'F5') { e.preventDefault(); flushEditor(); flushPersist(); location.reload(); return; }
   if (mod && !e.altKey && (k === 'KeyK' || k === 'KeyP')) { e.preventDefault(); openSearch(); }
   else if (e.altKey && !mod && k === 'KeyN') { e.preventDefault(); createPage(''); }
