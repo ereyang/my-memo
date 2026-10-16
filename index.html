@@ -1266,11 +1266,25 @@ editor.addEventListener('mousedown', e => {
   const sum = e.target.closest('summary');
   if (sum && e.clientX - sum.parentElement.getBoundingClientRect().left < 22) e.preventDefault();
 });
+// 체크한 할 일은 그 목록의 맨 뒤로 (안 한 일 → 한 일 순서, 각자 원래 순서는 유지)
+function sortTodo(li) {
+  const ul = li.parentElement; if (!ul) return;
+  const items = [...ul.children].filter(x => x.tagName === 'LI');
+  const done = x => x.hasAttribute('data-checked');
+  // 방금 체크한 일은 맨 끝, 방금 체크를 푼 일은 안 한 일들의 맨 끝
+  const sorted = [...items.filter(x => !done(x) && x !== li), ...(!done(li) ? [li] : []), ...items.filter(x => done(x) && x !== li), ...(done(li) ? [li] : [])];
+  if (sorted.every((x, i) => x === items[i])) return;
+  const before = li.getBoundingClientRect().top;
+  sorted.forEach(x => ul.append(x));
+  // 자리를 옮긴 게 눈에 보이도록 살짝 미끄러지듯
+  const dy = before - li.getBoundingClientRect().top;
+  if (dy && li.animate) li.animate([{ transform: `translateY(${dy}px)`, opacity: .4 }, { transform: 'none', opacity: 1 }], { duration: 280, easing: 'ease-out' });
+}
 editor.addEventListener('click', e => {
   $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
   const li = e.target.closest('ul.todo > li');
   if (li && e.target === li && e.clientX - li.getBoundingClientRect().left < 24) {
-    li.toggleAttribute('data-checked'); markChanged(); return;
+    li.toggleAttribute('data-checked'); sortTodo(li); markChanged(); return;
   }
   const sum = e.target.closest('summary');
   if (sum) {
