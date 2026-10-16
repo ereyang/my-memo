@@ -1593,6 +1593,13 @@ document.addEventListener('keydown', e => {
     const up = ['Equal', 'NumpadAdd', 'BracketRight'].includes(k) || (e.shiftKey && k === 'Period');
     if ((down || up) && sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode)) { e.preventDefault(); stepSize(up ? 1 : -1); return; }
   }
+  // Windows 전용 프로그램: 글자를 안 골랐을 때 Ctrl + - / = / 0 은 창 전체 확대·축소, F5 는 새로 고침
+  const host = window.chrome && window.chrome.webview;
+  if (host && mod && !e.altKey) {
+    const z = ['Minus', 'NumpadSubtract'].includes(k) ? '-' : ['Equal', 'NumpadAdd'].includes(k) ? '+' : (k === 'Digit0' || k === 'Numpad0') ? '0' : '';
+    if (z) { e.preventDefault(); host.postMessage('zoom:' + z); return; }
+  }
+  if (host && k === 'F5') { e.preventDefault(); flushEditor(); flushPersist(); location.reload(); return; }
   if (mod && !e.altKey && (k === 'KeyK' || k === 'KeyP')) { e.preventDefault(); openSearch(); }
   else if (e.altKey && !mod && k === 'KeyN') { e.preventDefault(); createPage(''); }
   else if (mod && (k === 'Backslash' || k === 'IntlYen')) { e.preventDefault(); toggleSide(); }

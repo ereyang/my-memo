@@ -95,6 +95,9 @@ class MemoForm : Form
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.AreDefaultContextMenusEnabled = true;
         core.Settings.IsZoomControlEnabled = true;
+        // 브라우저 단축키(Ctrl + - / = 확대·축소 등)는 끄고 메모장이 직접 처리:
+        // 글자를 골라 두었으면 고른 글자 크기만, 아니면 메모장이 "zoom:" 메시지를 보내 창 전체 확대·축소
+        core.Settings.AreBrowserAcceleratorKeysEnabled = false;
         core.DocumentTitleChanged += delegate { string t = core.DocumentTitle; Text = string.IsNullOrEmpty(t) ? "내 메모장" : t; };
         core.NewWindowRequested += (s, a) => { a.Handled = true; OpenExternal(a.Uri); };
         core.NavigationStarting += (s, a) =>
@@ -107,6 +110,9 @@ class MemoForm : Form
             string m = a.TryGetWebMessageAsString();
             if (m == "pin") SetPin(!TopMost);
             else if (m == "ready") SendPin();
+            else if (m == "zoom:+") web.ZoomFactor = Math.Min(5, Math.Round(web.ZoomFactor * 1.1, 2));
+            else if (m == "zoom:-") web.ZoomFactor = Math.Max(0.25, Math.Round(web.ZoomFactor / 1.1, 2));
+            else if (m == "zoom:0") web.ZoomFactor = 1;
         };
         double z;
         if (double.TryParse(Get("zoom"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out z) && z >= 0.25 && z <= 5) web.ZoomFactor = z;
