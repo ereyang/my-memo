@@ -123,6 +123,7 @@ body.resizing #side{transition:none}
 #picon{font-size:56px;line-height:1.1;cursor:pointer;display:inline-block;border-radius:8px;padding:2px;margin:4px 0 6px -2px}
 #picon:hover{background:var(--hover)}
 #title{font-family:var(--font,inherit);font-size:2.35em;font-weight:700;line-height:1.25;outline:none;word-break:break-word;padding:2px 0}
+#title.long{font-size:1.35em;font-weight:600;line-height:1.45}
 #title:empty::before{content:attr(data-ph);color:var(--faint)}
 #meta{font-size:12.5px;color:var(--faint);margin:6px 0 18px;min-height:18px}
 #banner{display:flex;align-items:center;gap:10px;background:var(--accent-bg);color:var(--text);font-size:13.5px;padding:8px 12px;border-radius:8px;margin-bottom:12px}
@@ -636,7 +637,7 @@ function renderPage(keepScroll) {
   scroller.hidden = false; pageEl.hidden = false; $('#empty').hidden = true; $('#toolbar').hidden = false;
   $('#btnStar').hidden = false; $('#btnMore').hidden = false;
   $('#picon').textContent = n.icon || ''; $('#picon').hidden = !n.icon; $('#addIcon').hidden = !!n.icon;
-  if (titleEl.textContent !== n.title) titleEl.textContent = n.title || '';
+  if (titleEl.textContent !== n.title) titleEl.textContent = n.title || ''; titleEl.classList.toggle('long', (n.title || '').length > 40);
   editor.innerHTML = n.content || '<p><br></p>';
   S.edDirty = false; $('#banner').hidden = true;
   fixNewlines(editor); normalize(); refreshPageLinks(); renderMeta(); renderKids(); renderCrumbs();
@@ -683,7 +684,7 @@ function createPage(parentId = '', opts = {}) {
 /* ---------- 제목 / 아이콘 ---------- */
 titleEl.addEventListener('input', () => {
   if (!S.cur) return;
-  S.cur.title = titleEl.textContent.replace(/\n/g, ' ');
+  S.cur.title = titleEl.textContent.replace(/\n/g, ' '); titleEl.classList.toggle('long', S.cur.title.length > 40);
   touch(S.cur); renderSideSoon(); renderCrumbs(); renderMeta();
   document.title = (S.cur.title || '제목 없음');
 });
@@ -1355,9 +1356,15 @@ editor.addEventListener('drop', e => {
 /* ---------- 도구 모음 ---------- */
 const tb = $('#toolbar');
 tb.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+// 제목 칸은 글자 하나하나에 크기·색을 줄 수 없음 → 알려 주고 본문으로 옮기기 제안
+function selInTitle() { const s = getSelection(); return document.activeElement === titleEl || (s.rangeCount > 0 && titleEl.contains(s.anchorNode)); }
+function titleFormatHint() {
+  toast('제목 칸 글자는 크기·색을 따로 바꿀 수 없어요', '본문으로 옮기기', () => titleIntoBody(S.cur));
+}
 tb.addEventListener('click', e => {
   const b = e.target.closest('button[data-cmd]'); if (!b || !S.cur) return;
   const c = b.dataset.cmd;
+  if (selInTitle() && !getSelection().isCollapsed && c !== 'undo' && c !== 'redo') { titleFormatHint(); return; }
   restoreSel();
   const simple = { bold: 'bold', italic: 'italic', underline: 'underline', strike: 'strikeThrough', undo: 'undo', redo: 'redo' };
   if (simple[c]) exec(simple[c]);
@@ -1690,6 +1697,7 @@ document.addEventListener('keydown', e => {
     const sel = getSelection();
     const down = ['Minus', 'NumpadSubtract', 'BracketLeft'].includes(k) || (e.shiftKey && k === 'Comma');
     const up = ['Equal', 'NumpadAdd', 'BracketRight'].includes(k) || (e.shiftKey && k === 'Period');
+    if ((down || up) && sel.rangeCount && !sel.isCollapsed && titleEl.contains(sel.anchorNode)) { e.preventDefault(); titleFormatHint(); return; }
     if ((down || up) && sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode)) { e.preventDefault(); stepSize(up ? 1 : -1); return; }
   }
   // Windows 전용 프로그램: 글자를 안 골랐을 때 Ctrl + - / = / 0 은 창 전체 확대·축소, F5 는 새로 고침
