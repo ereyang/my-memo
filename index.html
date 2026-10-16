@@ -691,6 +691,44 @@ titleEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); editor.focus(); placeCaret(editor.firstElementChild || editor, false); }
   if (e.key === 'ArrowDown' && !e.isComposing) { e.preventDefault(); editor.focus(); placeCaret(editor.firstElementChild || editor, false); }
 });
+// 휴대폰 한글 자판은 Enter 를 keydown 으로 알려 주지 않아서, 제목 칸에서 Enter 가 띄어쓰기로 바뀌던 문제 → 본문으로 이동
+function titleToBody(rest) {
+  editor.focus();
+  if (rest && rest.length) {
+    const first = editor.firstElementChild;
+    const html = rest.map(l => `<p>${esc(l) || '<br>'}</p>`).join('');
+    if (first && first.tagName === 'P' && first.textContent === '') first.outerHTML = html; else editor.insertAdjacentHTML('afterbegin', html);
+    placeCaret(editor.children[rest.length - 1], true); markChanged(); flushEditor();
+  } else placeCaret(editor.firstElementChild || editor, false);
+}
+titleEl.addEventListener('beforeinput', e => {
+  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') { e.preventDefault(); titleToBody(); return; }
+  if (e.inputType === 'insertText' && e.data && /[\r\n]/.test(e.data)) {
+    e.preventDefault();
+    const [first, ...rest] = e.data.replace(/\r\n?/g, '\n').split('\n');
+    if (first) exec('insertText', first);
+    titleToBody(rest);
+  }
+});
+titleEl.addEventListener('paste', e => {
+  const t = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+  if (!/[\r\n]/.test(t.trim())) return;
+  e.preventDefault();
+  const [first, ...rest] = t.trim().replace(/\r\n?/g, '\n').split('\n');
+  exec('insertText', first);
+  titleToBody(rest);
+});
+// 제목에 길게 써 버린 글을 본문으로 옮기기 (페이지 ⋯ 메뉴)
+function titleIntoBody(n) {
+  flushEditor();
+  const t = (n.title || '').trim(); if (!t) return;
+  const body = (n.content || '').replace(/^<p><br><\/p>$/, '');
+  n.content = `<p>${esc(t)}</p>` + body;
+  n.title = '';
+  touch(n);
+  if (S.cur && S.cur.id === n.id) { renderPage(true); titleEl.focus(); }
+  renderSide(); toast('제목 글을 본문으로 옮겼어요. 새 제목을 써 주세요');
+}
 const EMOJI = '📝📄📌⭐💡📚✏️🗂️📅✅🎯🏫🍎🔥💬🎵🌱☕🧠📊🔖🏠❤️😀🚀🧩🎨🍀✨📷🎁🛒💰✈️🏃🙏📖🗓️⏰🔑🌈🐶🌸🍰⚽🎬🎮💼🧾📈🧪🌍'.match(/\p{Extended_Pictographic}\uFE0F?/gu);
 function iconPicker(anchor) {
   const el = document.createElement('div');
@@ -1368,6 +1406,7 @@ function pageMenu(n, rect) {
     { icon: '＋', label: '하위 페이지 추가', run: () => createPage(n.id) },
     { icon: '↪', label: '다른 곳으로 옮기기', run: () => moveDialog(n) },
     { icon: '⧉', label: '복제', run: () => duplicate(n) },
+    ...((n.title || '').length > 30 ? [{ icon: '⤵', label: '긴 제목을 본문으로 옮기기', run: () => titleIntoBody(n) }] : []),
     ...(window.chrome && window.chrome.webview ? [{ icon: '🗗', label: '새 창으로 열기', run: () => openInNewWindow(n) }] : []),
     ...(S.cur && S.cur.id === n.id ? [{ icon: '🖨', label: '인쇄 · PDF로 저장', run: () => { flushEditor(); setTimeout(() => print(), 50); } }] : []),
     '-',

@@ -29,10 +29,24 @@ static class Program
                 Native.PostMessage((IntPtr)0xffff, ShowMsg, IntPtr.Zero, IntPtr.Zero);
                 return;
             }
+            Application.ThreadException += (s, e) => LogError(e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => LogError(e.ExceptionObject as Exception);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MemoApp());
         }
+    }
+
+    // 문제가 생기면 %LOCALAPPDATA%\MyMemo\error.log 에 기록
+    public static void LogError(Exception ex)
+    {
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyMemo");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "error.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine);
+        }
+        catch { }
     }
 }
 
@@ -184,6 +198,7 @@ class MemoForm : Form
         }
         catch (Exception ex)
         {
+            Program.LogError(ex);
             MessageBox.Show("화면을 띄우는 구성 요소(WebView2)를 찾지 못했어요.\n\n" + ex.Message, "내 메모장", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
             return;
