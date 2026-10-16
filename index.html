@@ -772,7 +772,22 @@ function placeCaret(el, atEnd) {
   r.selectNodeContents(el); r.collapse(!atEnd);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
+// 도구 모음·팝업을 누르는 순간(특히 터치·펜) 선택이 풀려도, 누르기 직전에 골라 둔 글자를 기억해 두었다가 다시 고름
+let keepRange = null;
+function rememberSel() {
+  if (savedRange && !savedRange.collapsed && editor.contains(savedRange.startContainer)) keepRange = savedRange.cloneRange();
+}
+editor.addEventListener('pointerdown', () => { keepRange = null; });
+editor.addEventListener('keydown', e => { if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) keepRange = null; }, true);
 function restoreSel() {
+  if (keepRange && editor.contains(keepRange.startContainer) && editor.contains(keepRange.endContainer)) {
+    const s = getSelection();
+    if (s.isCollapsed || document.activeElement !== editor) {
+      editor.focus({ preventScroll: true });
+      s.removeAllRanges(); s.addRange(keepRange.cloneRange());
+      return;
+    }
+  }
   if (document.activeElement !== editor) {
     editor.focus({ preventScroll: true });
     if (savedRange && editor.contains(savedRange.startContainer)) { const s = getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
@@ -953,6 +968,11 @@ function applyInline(prop, val) {
     s.getRangeAt(0).insertNode(sp);
     const r = document.createRange(); r.setStart(sp.firstChild, 1); r.collapse(true); s.removeAllRanges(); s.addRange(r);
     markChanged(); return;
+  }
+  if (prop === 'fontFamily') {
+    // 글꼴은 브라우저 기능으로 바로 (이미 바꾼 글자 크기는 그대로 둠)
+    exec('styleWithCSS', true); exec('fontName', val || 'inherit'); exec('styleWithCSS', false);
+    markChanged(); updateToolbarState(); return;
   }
   exec('styleWithCSS', true); exec('fontSize', '7'); exec('styleWithCSS', false);
   const marked = $$('span[style*="xxx-large"], font[size="7"]', editor);
@@ -1367,7 +1387,10 @@ function placePop(el, rect) {
   if (y + h > vh - 8) y = Math.max(8, rect.top - h - 6);
   el.style.left = x + 'px'; el.style.top = y + 'px';
 }
-document.addEventListener('pointerdown', e => { if (pop && !pop.contains(e.target)) closePop(); }, true);
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toolbar') || (pop && pop.contains(e.target))) rememberSel();
+  if (pop && !pop.contains(e.target)) closePop();
+}, true);
 function menu(rect, items) {
   const el = document.createElement('div');
   for (const it of items) {
