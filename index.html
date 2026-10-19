@@ -156,6 +156,10 @@ body.resizing #side{transition:none}
 #editor ul.todo>li::before{content:"";position:absolute;left:0;top:calc(.85em - 8px);width:17px;height:17px;border:1.6px solid var(--muted);border-radius:4px;cursor:pointer;background:var(--bg)}
 #editor ul.todo>li[data-checked]::before{background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/13px no-repeat;border-color:var(--accent)}
 #editor ul.todo>li[data-checked]{color:var(--faint);text-decoration:line-through}
+#editor ul.todo>li>ul,#editor ul.todo>li>ol{display:inline-block;width:100%;vertical-align:top;color:var(--text)}
+#editor ul.note,#editor ul.todo>li>ul.note{list-style:none;padding-left:10px;margin:2px 0 4px;border-left:2px solid var(--border);color:var(--muted);font-size:.93em}
+#editor ul.note>li{padding-left:0;margin:1px 0}
+#editor ul.todo>li[data-checked]>ul{opacity:.6}
 #editor blockquote{border-left:3px solid currentColor;margin:6px 0;padding:2px 0 2px 14px}
 #editor blockquote.callout{border:0;background:var(--callout);border-radius:6px;padding:14px 16px 14px 46px;position:relative}
 #editor blockquote.callout::before{content:"💡";position:absolute;left:15px;top:13px;font-size:1.1em}
@@ -328,6 +332,8 @@ body.resizing #side{transition:none}
       <button data-cmd="ul" title="글머리 목록">•<span class="lbl">&nbsp;목록</span></button>
       <button data-cmd="ol" title="번호 목록">1.<span class="lbl">&nbsp;목록</span></button>
       <button data-cmd="todo" title="할 일">☑<span class="lbl"> 할 일</span></button>
+      <button data-cmd="outdent" title="내어쓰기 (Shift+Tab)">⇤</button>
+      <button data-cmd="indent" title="들여쓰기 — 체크 항목 아래에 설명 줄 (Tab)">⇥</button>
       <button data-cmd="quote" title="인용">❝</button>
       <button data-cmd="img" title="이미지">🖼</button>
       <span class="sep"></span>
@@ -881,6 +887,7 @@ function listCmd(kind) {
   const tag = kind === 'ol' ? 'OL' : 'UL';
   const todo = kind === 'todo';
   let li = closestIn('li'), lst = li && li.parentElement;
+  if (lst && tag === 'UL' && lst.classList.contains('note')) { lst.classList.remove('note'); lst.classList.toggle('todo', todo); if (!lst.className) lst.removeAttribute('class'); markChanged(); return; }
   if (lst && lst.tagName === tag && lst.classList.contains('todo') === todo) { exec(tag === 'OL' ? 'insertOrderedList' : 'insertUnorderedList'); markChanged(); return; }
   if (lst && lst.tagName === tag) { lst.classList.toggle('todo', todo); if (!lst.className) lst.removeAttribute('class'); markChanged(); return; }
   const h = closestIn('h1,h2,h3,blockquote,pre'); if (h) toP(h);
@@ -1125,6 +1132,55 @@ const MD = [
   [/^[-*+•]$/, () => listCmd('ul')], [/^1[.)]$/, () => listCmd('ol')], [/^\[ ?\]$/, () => listCmd('todo')],
   [/^>$/, () => fmtBlock('BLOCKQUOTE')], [/^```$/, () => fmtBlock('PRE')], [/^!$/, () => fmtBlock('BLOCKQUOTE', 'callout')],
 ];
+/* ---------- 목록 들여쓰기: 체크 항목 아래에 설명 줄 ---------- */
+function ownText(li) { const c = li.cloneNode(true); c.querySelectorAll('ul,ol').forEach(x => x.remove()); return c.textContent.replace(/\u200b/g, ''); }
+function caretOffsetIn(el) { const s = getSelection(); if (!s.rangeCount) return 0; const r = document.createRange(); r.selectNodeContents(el); try { r.setEnd(s.anchorNode, s.anchorOffset); } catch (e) { return 0; } return r.toString().length; }
+function setCaretOffset(el, off) {
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n, last = null;
+  while ((n = w.nextNode())) { last = n; if (off <= n.data.length) { const r = document.createRange(); r.setStart(n, off); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return; } off -= n.data.length; }
+  if (last) { const r = document.createRange(); r.setStart(last, last.data.length); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } else placeCaret(el, false);
+}
+function subListFor(li, like) {
+  // li 안의 마지막 목록을 쓰거나 새로 만듦. 체크 목록 아래는 "설명 줄"(ul.note)
+  const last = li.lastElementChild;
+  if (last && (last.tagName === 'UL' || last.tagName === 'OL')) return last;
+  const sub = document.createElement(like.tagName === 'OL' ? 'ol' : 'ul');
+  if (like.classList.contains('todo') || like.classList.contains('note')) sub.className = 'note';
+  li.append(sub); return sub;
+}
+function indentLi(li) {
+  const prev = li.previousElementSibling;
+  if (!prev || prev.tagName !== 'LI') { toast('목록의 첫 줄은 들여쓸 수 없어요'); return; }
+  const off = caretOffsetIn(li);
+  subListFor(prev, li.parentElement).append(li);
+  li.removeAttribute('data-checked');
+  if (!li.firstChild) li.innerHTML = '<br>';
+  editor.focus(); setCaretOffset(li, off); markChanged();
+}
+function outdentLi(li) {
+  const list = li.parentElement, parentLi = list && list.parentElement;
+  if (!parentLi || parentLi.tagName !== 'LI') { exec('outdent'); markChanged(); return; }
+  const off = caretOffsetIn(li);
+  // 아래에 이어지던 줄들은 이 줄의 하위로 따라오게
+  const after = []; for (let x = li.nextElementSibling; x; x = x.nextElementSibling) after.push(x);
+  if (after.length) { const sub = subListFor(li, list); if (!sub.className && list.className) sub.className = list.className; after.forEach(x => sub.append(x)); }
+  parentLi.after(li);
+  if (!list.children.length) list.remove();
+  editor.focus(); setCaretOffset(li, off); markChanged();
+}
+editor.addEventListener('beforeinput', e => {
+  if (e.inputType !== 'insertParagraph') return;
+  const li = closestIn('li'); if (!li || closestIn('pre,td,summary')) return;
+  const nested = li.parentElement.parentElement && li.parentElement.parentElement.tagName === 'LI';
+  // 빈 설명 줄에서 Enter → 한 칸 밖으로 (다시 체크 항목)
+  if (nested && ownText(li) === '' && !li.querySelector('img')) { e.preventDefault(); outdentLi(li); return; }
+  // 설명 줄이 달린 항목 끝에서 Enter → 설명 아래에 새 항목 (설명이 새 항목으로 딸려 가지 않게)
+  const sub = li.lastElementChild, sel = getSelection();
+  if (sub && (sub.tagName === 'UL' || sub.tagName === 'OL') && sel.isCollapsed && !sub.contains(sel.anchorNode) && caretOffsetIn(li) >= ownText(li).length) {
+    e.preventDefault();
+    const n = document.createElement('li'); n.innerHTML = '<br>'; li.after(n); placeCaret(n, false); markChanged();
+  }
+});
 // 일부 휴대폰 자판은 Enter 를 "\n" 글자로 넣어서, 화면에서는 띄어쓰기처럼 보여 줄바꿈이 사라짐 → 문단 나누기로 바꿈
 editor.addEventListener('beforeinput', e => {
   if (!['insertText', 'insertReplacementText'].includes(e.inputType) || !e.data || !/[\r\n]/.test(e.data) || closestIn('pre')) return;
@@ -1205,10 +1261,7 @@ editor.addEventListener('keydown', e => {
       if (i >= 0) placeCaret(cells[i], true); return;
     }
     if (closestIn('li')) {
-      e.preventDefault(); exec(e.shiftKey ? 'outdent' : 'indent');
-      const li = closestIn('li'); const lst = li && li.parentElement; const outer = lst && lst.parentElement.closest('ul,ol');
-      if (outer && outer.classList.contains('todo') && lst.tagName === 'UL') lst.classList.add('todo');
-      markChanged(); return;
+      e.preventDefault(); const li = closestIn('li'); (e.shiftKey ? outdentLi : indentLi)(li); return;
     }
     if (closestIn('pre')) { e.preventDefault(); exec('insertText', '  '); return; }
     e.preventDefault(); exec('insertText', '\u00a0\u00a0\u00a0\u00a0'); return;
@@ -1328,6 +1381,7 @@ function sanitize(html) {
       }
       if (t === 'img') { const s = c.getAttribute('src') || ''; if (/^(https?:|data:image\/)/i.test(s)) el.setAttribute('src', s); else continue; }
       if (t === 'ul' && c.classList.contains('todo')) el.className = 'todo';
+      if (t === 'ul' && c.classList.contains('note')) el.className = 'note';
       if (t === 'li' && c.hasAttribute('data-checked')) el.setAttribute('data-checked', '');
       if (t === 'blockquote' && c.classList.contains('callout')) el.className = 'callout';
       if (t === 'details') el.open = true;
@@ -1383,6 +1437,7 @@ tb.addEventListener('click', e => {
   else if (c === 'h1' || c === 'h2' || c === 'h3') fmtBlock(c.toUpperCase());
   else if (c === 'ul' || c === 'ol' || c === 'todo') listCmd(c);
   else if (c === 'quote') fmtBlock('BLOCKQUOTE');
+  else if (c === 'indent' || c === 'outdent') { const li = closestIn('li'); if (li) (c === 'indent' ? indentLi : outdentLi)(li); else toast('목록이나 체크 항목 줄에서 쓸 수 있어요'); return; }
   else if (c === 'code') inlineCode();
   else if (c === 'link') makeLink();
   else if (c === 'img') pickImage();
