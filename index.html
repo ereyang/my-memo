@@ -80,6 +80,9 @@ body.side-closed #side{margin-left:calc(-1 * var(--sideW))}
 .row.drop-in{box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg)}
 .row.drop-before::before,.row.drop-after::after{content:"";position:absolute;left:8px;right:4px;height:3px;background:var(--accent);border-radius:2px}
 .row.drop-before::before{top:-2px}.row.drop-after::after{bottom:-2px}
+#tree .row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.row.dragging{opacity:.45;background:var(--accent-bg)}
+body.tdrag #sideScroll{overflow-y:hidden}
 #sideResize{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:5}
 #sideResize:hover,#sideResize.on{background:linear-gradient(to right,transparent 3px,var(--accent) 3px,var(--accent) 5px,transparent 5px)}
 body.resizing{cursor:col-resize;user-select:none}
@@ -543,7 +546,7 @@ function setStatus(s, detail) {
 /* ---------- 사이드바 ---------- */
 const CHEV = '<svg viewBox="0 0 12 12"><path d="M4 2.5L7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 function rowHTML(n, depth, inTree, hasKids, open) {
-  return `<div class="row${S.cur && S.cur.id === n.id ? ' active' : ''}" data-id="${n.id}" style="padding-left:${4 + depth * 14}px"${inTree && !isMobile() ? ' draggable="true"' : ''}>
+  return `<div class="row${S.cur && S.cur.id === n.id ? ' active' : ''}" data-id="${n.id}" style="padding-left:${4 + depth * 14}px"${inTree && matchMedia('(pointer:fine)').matches ? ' draggable="true"' : ''}>
     <span class="tog${open ? ' open' : ''}${hasKids ? '' : ' none'}" data-act="tog">${CHEV}</span>
     <span class="ic">${esc(n.icon || '📄')}</span><span class="tt">${esc(n.title || '제목 없음')}</span>
     <span class="acts"><button data-act="menu" title="더보기">⋯</button>${inTree ? '<button data-act="add" title="하위 페이지 추가">＋</button>' : ''}</span></div>`;
@@ -575,7 +578,9 @@ $('#sideScroll').addEventListener('click', e => {
 });
 $('#sideScroll').addEventListener('contextmenu', e => {
   const row = e.target.closest('.row'); if (!row) return;
-  e.preventDefault(); pageMenu(get(row.dataset.id), { left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY });
+  e.preventDefault();
+  if (tDrag) { startTouchDrag(); return; }
+  pageMenu(get(row.dataset.id), { left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY });
 });
 // 끌어다 놓기 (PC)
 let dragId = null;
@@ -595,6 +600,60 @@ tree.addEventListener('drop', e => {
   e.preventDefault(); const zone = dropZone(e, r); clearDrop();
   movePage(dragId, r.dataset.id, zone); dragId = null;
 });
+// 꾹 눌러 끌기 (터치) — 누른 채 움직이면 순서 바꾸기, 그냥 떼면 메뉴
+let tDrag = null;
+function startTouchDrag() {
+  if (!tDrag || tDrag.on) return;
+  clearTimeout(tDrag.timer); tDrag.on = true;
+  tDrag.row.classList.add('dragging'); document.body.classList.add('tdrag');
+  try { navigator.vibrate && navigator.vibrate(15); } catch (_) {}
+}
+function endTouchDrag() {
+  if (!tDrag) return;
+  clearTimeout(tDrag.timer); cancelAnimationFrame(tDrag.raf);
+  tDrag.row.classList.remove('dragging'); document.body.classList.remove('tdrag'); clearDrop();
+  tDrag = null;
+}
+tree.addEventListener('touchstart', e => {
+  endTouchDrag();
+  if (e.touches.length !== 1) return;
+  const r = e.target.closest('.row'); if (!r || e.target.closest('[data-act]')) return;
+  const t = e.touches[0];
+  tDrag = { id: r.dataset.id, row: r, x: t.clientX, y: t.clientY, on: false, moved: false, target: null, zone: null, raf: 0 };
+  tDrag.timer = setTimeout(startTouchDrag, 420);
+}, { passive: true });
+tree.addEventListener('touchmove', e => {
+  if (!tDrag) return;
+  const t = e.touches[0];
+  if (!tDrag.on) { if (Math.hypot(t.clientX - tDrag.x, t.clientY - tDrag.y) > 8) endTouchDrag(); return; }
+  e.preventDefault();
+  tDrag.y = t.clientY; tDrag.moved = true;
+  clearDrop(); tDrag.target = null;
+  const r = document.elementFromPoint(t.clientX, t.clientY)?.closest('#tree .row');
+  if (r && r.dataset.id !== tDrag.id) { tDrag.target = r.dataset.id; tDrag.zone = dropZone(t, r); r.classList.add('drop-' + tDrag.zone); }
+  // 목록 끝 가까이 가면 저절로 스크롤
+  const sc = $('#sideScroll'), b = sc.getBoundingClientRect();
+  cancelAnimationFrame(tDrag.raf);
+  const step = () => {
+    if (!tDrag) return;
+    const d = tDrag.y < b.top + 40 ? -8 : tDrag.y > b.bottom - 40 ? 8 : 0;
+    if (d) { sc.scrollTop += d; tDrag.raf = requestAnimationFrame(step); }
+  };
+  step();
+}, { passive: false });
+tree.addEventListener('touchend', e => {
+  if (!tDrag) return;
+  const d = tDrag; clearTimeout(d.timer);
+  if (!d.on) { tDrag = null; return; }
+  e.preventDefault(); endTouchDrag();
+  if (d.target) movePage(d.id, d.target, d.zone);
+  else if (!d.moved) { const b = d.row.getBoundingClientRect(); pageMenu(get(d.id), { left: b.left + 40, right: b.left + 40, top: b.top, bottom: b.bottom }); }
+});
+tree.addEventListener('touchcancel', endTouchDrag);
+function moveStep(n, dir) {
+  const sibs = childrenOf(isRoot(n) ? '' : n.parentId), i = sibs.indexOf(n), t = sibs[i + dir];
+  if (t) movePage(n.id, t.id, dir < 0 ? 'before' : 'after');
+}
 function movePage(id, targetId, zone) {
   const n = get(id), t = get(targetId); if (!n || !t || id === targetId) return;
   if (descendants(id).includes(t)) { toast('하위 페이지 안으로는 옮길 수 없어요'); return; }
@@ -1501,6 +1560,10 @@ function pageMenu(n, rect) {
   menu(rect, [
     { icon: n.pinned ? '☆' : '★', label: n.pinned ? '즐겨찾기 해제' : '즐겨찾기에 추가', run: () => { n.pinned = !n.pinned; touch(n); renderSide(); renderCrumbs(); } },
     { icon: '＋', label: '하위 페이지 추가', run: () => createPage(n.id) },
+    ...(() => { const sibs = childrenOf(isRoot(n) ? '' : n.parentId), i = sibs.indexOf(n); return [
+      ...(i > 0 ? [{ icon: '↑', label: '위로 올리기', run: () => moveStep(n, -1) }] : []),
+      ...(i >= 0 && i < sibs.length - 1 ? [{ icon: '↓', label: '아래로 내리기', run: () => moveStep(n, 1) }] : []),
+    ]; })(),
     { icon: '↪', label: '다른 곳으로 옮기기', run: () => moveDialog(n) },
     { icon: '⧉', label: '복제', run: () => duplicate(n) },
     ...((n.title || '').length > 30 ? [{ icon: '⤵', label: '긴 제목을 본문으로 옮기기', run: () => titleIntoBody(n) }] : []),
