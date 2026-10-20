@@ -1586,10 +1586,28 @@ function openSearch() {
     if (e.isComposing) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(res.length - 1, idx + 1); draw(); }
     if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(0, idx - 1); draw(); }
-    if (e.key === 'Enter' && res[idx]) { closeModal(); openPage(res[idx].n.id); }
+    if (e.key === 'Enter' && res[idx]) go(res[idx].n.id);
   };
-  box.onclick = e => { const r = e.target.closest('.res'); if (r) { closeModal(); openPage(res[+r.dataset.i].n.id); } };
+  const go = id => { const q = inp.value.trim(); closeModal(); openPage(id); if (q) setTimeout(() => jumpToText(q), 30); };
+  box.onclick = e => { const r = e.target.closest('.res'); if (r) go(res[+r.dataset.i].n.id); };
   draw(); setTimeout(() => inp.focus(), 30);
+}
+// 열린 페이지 본문에서 검색어를 찾아 그 글자를 고르고(커서 이동) 화면 가운데로 스크롤
+function jumpToText(q) {
+  const nodes = [], w = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let all = '';
+  for (let t; (t = w.nextNode());) { nodes.push({ t, s: all.length }); all += t.data; }
+  const norm = s => s.replace(/[\s ]/g, ' ').replace(/​/g, '\u0000').toLowerCase();
+  const at = norm(all).indexOf(norm(q).replace(/ +/g, ' '));
+  if (at < 0) return;
+  const pos = k => { let i = nodes.length - 1; while (i > 0 && nodes[i].s > k) i--; return [nodes[i].t, k - nodes[i].s]; };
+  const [sn, so] = pos(at), [en, eo] = pos(at + q.length);
+  for (let d = sn.parentElement.closest('details'); d && editor.contains(d); d = d.parentElement.closest('details')) d.open = true;
+  const r = document.createRange(); r.setStart(sn, so); r.setEnd(en, Math.min(eo, en.length));
+  editor.focus({ preventScroll: true });
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  const rc = r.getBoundingClientRect(), sc = scroller.getBoundingClientRect();
+  scroller.scrollTop += rc.top - sc.top - sc.height / 2 + rc.height / 2;
 }
 
 /* ---------- 휴지통 ---------- */
