@@ -928,6 +928,7 @@ function ensureTrailingP() {
 }
 function normalize() {
   if (!editor.firstChild) editor.innerHTML = '<p><br></p>';
+  fixHugeSizes(editor);
   ensureTrailingP();
 }
 function toP(el) {
@@ -1037,24 +1038,57 @@ function applyInline(prop, val) {
     const r = document.createRange(); r.setStart(sp.firstChild, 1); r.collapse(true); s.removeAllRanges(); s.addRange(r);
     markChanged(); return;
   }
-  if (prop === 'fontFamily') {
-    // 글꼴은 브라우저 기능으로 바로 (이미 바꾼 글자 크기는 그대로 둠)
-    exec('styleWithCSS', true); exec('fontName', val || 'inherit'); exec('styleWithCSS', false);
-    markChanged(); updateToolbarState(); return;
-  }
-  exec('styleWithCSS', true); exec('fontSize', '7'); exec('styleWithCSS', false);
-  const marked = $$('span[style*="xxx-large"], font[size="7"]', editor);
-  const kept = [];
-  for (let el of marked) {
-    if (el.tagName === 'FONT') { const sp = document.createElement('span'); sp.append(...el.childNodes); el.replaceWith(sp); el = sp; }
-    el.style.fontSize = '';
-    $$('[style]', el).forEach(d => { d.style[prop] = ''; if (!d.getAttribute('style')) d.removeAttribute('style'); });
-    if (val) el.style[prop] = val;
-    if (!el.getAttribute('style')) { const kids = [...el.childNodes]; el.replaceWith(...kids); kids.forEach(k => kept.push(k)); }
-    else kept.push(el);
-  }
-  if (kept.length) { const r = document.createRange(); r.setStartBefore(kept[0]); r.setEndAfter(kept[kept.length - 1]); s.removeAllRanges(); s.addRange(r); }
+  // 브라우저 기능(execCommand)은 목록·굵은 글씨에 엉뚱하게 48px을 붙이는 일이 있어 직접 처리:
+  // 고른 범위의 글자 하나하나(텍스트 조각)에 같은 크기·글꼴을 입힘 → 체크리스트·하위 항목도 한꺼번에
+  const r = s.getRangeAt(0);
+  const kept = styleRange(r, prop, val);
+  if (kept.length) { const nr = document.createRange(); nr.setStart(kept[0], 0); const l = kept[kept.length - 1]; nr.setEnd(l, l.length); s.removeAllRanges(); s.addRange(nr); }
   markChanged(); updateToolbarState();
+}
+const BLOCK_RE = /^(P|LI|H[1-6]|DIV|BLOCKQUOTE|UL|OL|TD|TH|TABLE|TR|TBODY|PRE|DETAILS|SUMMARY)$/;
+function blockOf(n) { let x = n.parentElement; while (x && x !== editor && !BLOCK_RE.test(x.tagName)) x = x.parentElement; return x || editor; }
+function dropProp(el, prop) {
+  el.style[prop] = '';
+  if (!el.getAttribute('style')) { el.removeAttribute('style'); if (el.tagName === 'SPAN' && !el.attributes.length) el.replaceWith(...el.childNodes); }
+}
+function styleRange(r, prop, val) {
+  // 1) 범위에 걸친 텍스트 조각 모으기 (양 끝은 잘라서 고른 부분만)
+  const w = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let list = [];
+  while (w.nextNode()) { const t = w.currentNode; if (r.intersectsNode(t) && t.data.length) list.push(t); }
+  list = list.filter(t => t.data.trim() || !/^(UL|OL|TABLE|TBODY|TR)$/.test(t.parentElement.tagName));
+  if (!list.length) return [];
+  const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
+  if (list[list.length - 1] === ec && ec.nodeType === 3) { if (eo === 0) list.pop(); else if (eo < ec.length) ec.splitText(eo); }
+  if (list[0] === sc && sc.nodeType === 3) { if (so >= sc.length) list.shift(); else if (so > 0) list[0] = sc.splitText(so); }
+  list = list.filter(t => t.data.length && editor.contains(t));
+  if (!list.length) return [];
+  const R = document.createRange(); R.setStartBefore(list[0]); R.setEndAfter(list[list.length - 1]);
+  const inside = el => { const q = document.createRange(); q.selectNodeContents(el); return R.compareBoundaryPoints(Range.START_TO_START, q) <= 0 && R.compareBoundaryPoints(Range.END_TO_END, q) >= 0; };
+  // 2) 범위 안에 통째로 들어온 요소의 같은 속성은 지우기 (예전에 남은 48px 포함)
+  const els = [...editor.querySelectorAll('[style]')].filter(el => el.style[prop] && R.intersectsNode(el) && inside(el));
+  els.forEach(el => dropProp(el, prop));
+  const fsPx = parseFloat(getComputedStyle(editor).fontSize) || 16;
+  // 3) 조각마다 적용
+  return list.map(t => {
+    let v = val;
+    if (!v) {
+      // 기본값: 걸쳐 있는 바깥 글자 서식이 있으면 그 줄(블록) 원래 값으로 덮기
+      let x = t.parentElement, over = false; const b = blockOf(t);
+      while (x && x !== b) { if (x.style && x.style[prop]) over = true; x = x.parentElement; }
+      if (!over) { const pe = t.parentElement; if (pe.tagName === 'SPAN' && pe.childNodes.length === 1 && pe.style[prop]) dropProp(pe, prop); return t; }
+      const bc = getComputedStyle(b);
+      v = prop === 'fontSize' ? `calc(var(--fs) * ${+(parseFloat(bc.fontSize) / fsPx).toFixed(4)})` : bc[prop];
+    }
+    const pe = t.parentElement;
+    if (pe.tagName === 'SPAN' && pe.childNodes.length === 1 && pe !== editor) { pe.style[prop] = v; return t; }
+    const sp = document.createElement('span'); sp.style[prop] = v; t.replaceWith(sp); sp.append(t); return t;
+  });
+}
+function fixHugeSizes(root) {
+  // 예전 버그로 남은 xxx-large(48px) 표시 지우기
+  root.querySelectorAll('[style*="xxx-large"]').forEach(el => dropProp(el, 'fontSize'));
+  root.querySelectorAll('font[size="7"]').forEach(el => el.replaceWith(...el.childNodes));
 }
 function stepSize(dir) {
   const s = getSelection(); const r = s.getRangeAt(0);
