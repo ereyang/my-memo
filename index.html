@@ -109,12 +109,14 @@ body.resizing #side{transition:none}
 #status[data-s="offline"] .dot{background:var(--warn)}
 #status[data-s="error"] .dot,#status[data-s="auth"] .dot{background:var(--danger)}
 @keyframes pulse{to{opacity:.3}}
-#toolbar{display:flex;align-items:center;gap:1px;padding:3px 10px;overflow-x:auto;border-bottom:1px solid var(--border);flex-shrink:0;scrollbar-width:none}
-#toolbar::-webkit-scrollbar{display:none}
-#toolbar button{height:32px;min-width:32px;padding:0 7px;border-radius:6px;font-size:14px;color:var(--text);flex-shrink:0;white-space:nowrap}
+#toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:1px;padding:2px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+body.tb-off #toolbar{display:none}
+#toolbar button{height:26px;min-width:26px;padding:0 5px;border-radius:5px;font-size:12.5px;color:var(--text);flex-shrink:0;white-space:nowrap}
+#btnTb{font-size:13px;font-weight:600;font-family:Georgia,serif}
+#btnTb.tb-on{background:var(--accent-bg);color:var(--accent)}
 #toolbar button:hover{background:var(--hover)}
 #toolbar button.on{background:var(--accent-bg);color:var(--accent)}
-#toolbar .sep{width:1px;height:18px;background:var(--border);margin:0 5px;flex-shrink:0}
+#toolbar .sep{width:1px;height:16px;background:var(--border);margin:0 3px;flex-shrink:0}
 #toolbar .plus{font-weight:600;color:var(--accent)}
 #scroller{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 #page{max-width:780px;margin:0 auto;padding:40px 56px 0}
@@ -265,8 +267,8 @@ body.resizing #side{transition:none}
 }
 @media (max-width: 560px){
   .lbl{display:none}
-  #toolbar{padding:3px 4px}
-  #toolbar button{min-width:30px;padding:0 5px}
+  #toolbar{padding:2px 4px}
+  #toolbar button{min-width:26px;padding:0 4px}
   #toolbar .sep{margin:0 2px}
   #topbar{padding:0 4px;height:42px}
   #page{padding:14px 14px 0}
@@ -312,6 +314,7 @@ body.resizing #side{transition:none}
       <button id="status" data-s="local" title="동기화 상태"><span class="dot"></span><span class="txt">이 기기에만 저장</span></button>
       <button class="ibtn" id="btnNewWin" title="이 페이지를 새 창으로 (Ctrl+Shift+N)" hidden>🗗</button>
       <button class="ibtn" id="btnPin" title="항상 위에 표시 (Ctrl+Alt+T)" hidden>📌</button>
+      <button class="ibtn" id="btnTb" title="글씨 도구 모음 펼치기 · 숨기기">Aa</button>
       <button class="ibtn" id="btnStar" title="즐겨찾기">☆</button>
       <button class="ibtn" id="btnMore" title="더보기"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
     </header>
@@ -322,9 +325,9 @@ body.resizing #side{transition:none}
       <button data-cmd="italic" title="기울임 (Ctrl+I)"><i style="font-family:Georgia,serif">I</i></button>
       <button data-cmd="underline" title="밑줄 (Ctrl+U)"><u>U</u></button>
       <button data-cmd="strike" title="취소선"><s>S</s></button>
-      <button data-cmd="code" title="코드" style="font-family:Consolas,monospace;font-size:13px">&lt;/&gt;</button>
-      <button data-cmd="font" id="tbFont" title="글꼴" style="min-width:58px">기본 ▾</button>
-      <button data-cmd="size" id="tbSize" title="글자 크기" style="min-width:42px">16 ▾</button>
+      <button data-cmd="code" title="코드" style="font-family:Consolas,monospace;font-size:11.5px">&lt;/&gt;</button>
+      <button data-cmd="font" id="tbFont" title="글꼴" style="min-width:50px">기본 ▾</button>
+      <button data-cmd="size" id="tbSize" title="글자 크기" style="min-width:36px">16 ▾</button>
       <button data-cmd="color" title="글자색 · 형광펜"><span style="border-bottom:3px solid #e9a800;padding:0 2px">A</span></button>
       <button data-cmd="link" title="링크">🔗</button>
       <span class="sep"></span>
@@ -384,7 +387,7 @@ const editor = $('#editor'), titleEl = $('#title'), pageEl = $('#page'), scrolle
 const CFG_KEY = 'memo.cfg';
 let cfg = {};
 try { cfg = JSON.parse(localStorage.getItem(CFG_KEY) || '{}') } catch (e) {}
-cfg = Object.assign({ url: '', key: '', theme: 'system', fs: 16, expanded: {}, last: '', sideClosed: false, localOnly: false }, cfg);
+cfg = Object.assign({ url: '', key: '', theme: 'system', fs: 16, expanded: {}, last: '', sideClosed: false, localOnly: false, tbHidden: false }, cfg);
 if (!cfg.url && DEFAULT_URL) cfg.url = DEFAULT_URL;
 function saveCfg() { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)) } catch (e) {} }
 const syncOn = () => !!cfg.url && !cfg.localOnly;
@@ -690,7 +693,7 @@ function showEmpty(msg) {
   flushEditor();
   S.cur = null; pageEl.hidden = true; $('#empty').hidden = false; scroller.hidden = true;
   $('#emptyMsg').textContent = msg || (S.notes.size ? '페이지를 고르거나 새로 만들어 보세요.' : '첫 페이지를 만들어 보세요.');
-  $('#crumbs').innerHTML = ''; $('#btnStar').hidden = true; $('#btnMore').hidden = true; $('#toolbar').hidden = true;
+  $('#crumbs').innerHTML = ''; $('#btnStar').hidden = true; $('#btnMore').hidden = true; $('#btnTb').hidden = true; $('#toolbar').hidden = true;
   document.title = '내 메모장';
   renderSide();
 }
@@ -698,7 +701,7 @@ function renderPage(keepScroll) {
   const n = S.cur; if (!n) return;
   const st = scroller.scrollTop;
   scroller.hidden = false; pageEl.hidden = false; $('#empty').hidden = true; $('#toolbar').hidden = false;
-  $('#btnStar').hidden = false; $('#btnMore').hidden = false;
+  $('#btnStar').hidden = false; $('#btnMore').hidden = false; $('#btnTb').hidden = false;
   $('#picon').textContent = n.icon || ''; $('#picon').hidden = !n.icon; $('#addIcon').hidden = !!n.icon;
   if (titleEl.textContent !== n.title) titleEl.textContent = n.title || ''; titleEl.classList.toggle('long', (n.title || '').length > 40);
   editor.innerHTML = n.content || '<p><br></p>';
@@ -1480,6 +1483,14 @@ editor.addEventListener('drop', e => {
 
 /* ---------- 도구 모음 ---------- */
 const tb = $('#toolbar');
+function applyTb() {
+  document.body.classList.toggle('tb-off', !!cfg.tbHidden);
+  $('#btnTb').classList.toggle('tb-on', !cfg.tbHidden);
+  $('#btnTb').title = cfg.tbHidden ? '글씨 도구 모음 펼치기' : '글씨 도구 모음 숨기기';
+}
+$('#btnTb').addEventListener('mousedown', e => e.preventDefault());
+$('#btnTb').onclick = () => { cfg.tbHidden = !cfg.tbHidden; saveCfg(); applyTb(); };
+applyTb();
 tb.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
 // 제목 칸은 글자 하나하나에 크기·색을 줄 수 없음 → 알려 주고 본문으로 옮기기 제안
 function selInTitle() { const s = getSelection(); return document.activeElement === titleEl || (s.rangeCount > 0 && titleEl.contains(s.anchorNode)); }
