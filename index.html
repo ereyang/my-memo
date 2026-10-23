@@ -1493,7 +1493,7 @@ function sanitize(html) {
       if (t === 'ul' && c.classList.contains('note')) el.className = 'note';
       if (t === 'li' && c.hasAttribute('data-checked')) el.setAttribute('data-checked', '');
       if (t === 'blockquote' && c.classList.contains('callout')) el.className = 'callout';
-      if (t === 'details') el.open = true;
+      if (t === 'details') el.open = c.hasAttribute('open');
       dst.append(el);
       if (!['img', 'br', 'hr'].includes(t)) walk(c, el);
     }
