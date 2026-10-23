@@ -1455,7 +1455,12 @@ editor.addEventListener('click', e => {
   const pl = e.target.closest('a.pagelink');
   if (pl) { e.preventDefault(); const t = get(pl.dataset.id); if (t && alive(t)) openPage(t.id); else toast('삭제된 페이지예요'); return; }
   const a = e.target.closest('a[href]');
-  if (a) { e.preventDefault(); window.open(a.href, '_blank', 'noopener'); return; }
+  if (a) {
+    e.preventDefault();
+    // PC 파일 링크(쿨메신저 받은 파일 등)는 PC 프로그램이 대신 연다
+    if (/^file:/i.test(a.href)) { const host = window.chrome && window.chrome.webview; if (host) host.postMessage('open:' + a.href); else toast('PC 파일은 ‘내 메모장 PC’ 프로그램에서 열 수 있어요'); return; }
+    window.open(a.href, '_blank', 'noopener'); return;
+  }
   if (e.target.tagName === 'IMG') {
     e.target.classList.add('sel');
     const r = document.createRange(); r.selectNode(e.target); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -1486,7 +1491,7 @@ function sanitize(html) {
       const el = document.createElement(t);
       if (t === 'a') {
         if (c.classList.contains('pagelink') && c.dataset.id) { el.className = 'pagelink'; el.dataset.id = c.dataset.id; el.setAttribute('href', '#' + c.dataset.id); el.setAttribute('contenteditable', 'false'); }
-        else { const h = c.getAttribute('href') || ''; if (/^(https?:|mailto:|tel:)/i.test(h)) el.setAttribute('href', h); else { walk(c, dst); continue; } }
+        else { const h = c.getAttribute('href') || ''; if (/^(https?:|mailto:|tel:|file:\/\/\/)/i.test(h)) el.setAttribute('href', h); else { walk(c, dst); continue; } }
       }
       if (t === 'img') { const s = c.getAttribute('src') || ''; if (/^(https?:|data:image\/)/i.test(s)) el.setAttribute('src', s); else continue; }
       if (t === 'ul' && c.classList.contains('todo')) el.className = 'todo';

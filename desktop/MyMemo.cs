@@ -289,6 +289,7 @@ class MemoForm : Form
             else if (m == "zoom:-") web.ZoomFactor = Math.Max(0.25, Math.Round(web.ZoomFactor / 1.1, 2));
             else if (m == "zoom:0") web.ZoomFactor = 1;
             else if (m.StartsWith("newwin:")) MemoApp.Current.OpenNew(m.Substring(7));
+            else if (m.StartsWith("open:")) OpenFile(m.Substring(5));
         };
         // 보고 있는 페이지(주소의 #아이디)와 확대 비율이 바뀌면 창 목록 저장
         core.SourceChanged += delegate
@@ -309,6 +310,21 @@ class MemoForm : Form
         if (string.IsNullOrEmpty(uri)) return;
         if (!(uri.StartsWith("http://") || uri.StartsWith("https://") || uri.StartsWith("mailto:"))) return;
         try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
+    }
+
+    // 메모 속 file:/// 링크 → 기본 프로그램(한글, 엑셀…)으로 열기. 실행 파일은 열지 않는다.
+    static readonly string[] Blocked = { ".exe", ".bat", ".cmd", ".com", ".scr", ".msi", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".lnk", ".reg", ".hta", ".cpl", ".jar", ".pif" };
+    void OpenFile(string uri)
+    {
+        string path;
+        try { Uri u = new Uri(uri); if (!u.IsFile) return; path = u.LocalPath; } catch { return; }
+        if (Array.IndexOf(Blocked, System.IO.Path.GetExtension(path).ToLowerInvariant()) >= 0) return;
+        if (!System.IO.File.Exists(path))
+        {
+            MessageBox.Show(this, "파일을 찾을 수 없어요.\n옮기거나 지웠을 수 있어요.\n\n" + path, "내 메모장", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
     }
 
     public void SetPin(bool on)
