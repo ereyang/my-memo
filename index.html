@@ -1923,14 +1923,30 @@ document.addEventListener('keydown', e => {
 window.addEventListener('popstate', e => { const id = (e.state && e.state.id) || location.hash.slice(1); if (id && get(id)) openPage(id, { noPush: true }); });
 
 /* ---------- 다른 탭 · 생명주기 ---------- */
+// 다른 창(탭)에서 고친 내용 받기. 서버로 올리는 일은 고친 창이 하므로 여기서는 _dirty 를 지움
+// 같은 페이지를 띄워 두었으면, 저쪽에서 타이핑하다 멈출 때마다 페이지 전체를 다시 그리면 두 창이 다 버벅여서
+// 저쪽 입력이 잠잠해진 뒤(2.5초) 또는 이 창을 다시 볼 때 한 번만 다시 그림
+let remoteT;
+function renderRemoteCur() {
+  clearTimeout(remoteT);
+  const id = S.remoteCur; S.remoteCur = null;
+  if (!id || !S.cur || S.cur.id !== id) return;
+  if (S.edDirty) $('#banner').hidden = false;   // 이 창에서 고친 내용이 아직 저장 전이면 덮어쓰지 않음
+  else renderPage(true);
+}
 if (bc) bc.onmessage = e => {
   const r = e.data; if (!r || !r.id) return;
   const l = get(r.id);
   if (l && r.updated <= l.updated) return;
-  if (l) Object.assign(l, r); else S.notes.set(r.id, r);
+  if (l) Object.assign(l, r, { _dirty: false }); else S.notes.set(r.id, Object.assign(r, { _dirty: false }));
   renderSideSoon();
-  if (S.cur && S.cur.id === r.id) { if (document.activeElement !== editor && document.activeElement !== titleEl) renderPage(true); else $('#banner').hidden = false; }
+  if (S.cur && S.cur.id === r.id) {
+    if (S.edDirty) { $('#banner').hidden = false; return; }
+    S.remoteCur = r.id; clearTimeout(remoteT);
+    if (!document.hidden) remoteT = setTimeout(renderRemoteCur, 2500);
+  }
 };
+window.addEventListener('focus', () => { if (S.remoteCur) renderRemoteCur(); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { S.composing = false; flushEditor(); flushPersist(); if (anyDirty()) sync(true); }
   else sync();
